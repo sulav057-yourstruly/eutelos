@@ -1,0 +1,65 @@
+:root {
+  /* Catppuccin Frappe */
+  --ctp-base: #303446;
+  --ctp-crust: #232634;
+  --ctp-mantle: #292c3c;
+  --ctp-surface0: #414559;
+  --ctp-surface1: #51576d;
+  --ctp-surface2: #626880;
+  --ctp-overlay0: #737994;
+  --ctp-overlay1: #838ba7;
+  --ctp-overlay2: #949cbb;
+  --ctp-subtext0: #a5adce;
+  --ctp-subtext1: #b5bfe2;
+  --ctp-text: #c6d0f5;
+  --ctp-lavender: #babbf1;
+  --ctp-blue: #8caaee;
+  --ctp-sapphire: #85c1dc;
+  --ctp-sky: #99d1db;
+  --ctp-teal: #81c8be;
+  --ctp-green: #a6d189;
+  --ctp-yellow: #e5c890;
+  --ctp-peach: #ef9f76;
+  --ctp-maroon: #ea999c;
+  --ctp-red: #e78284;
+  --ctp-mauve: #ca9ee6;
+  --ctp-pink: #f4b8e4;
+  --ctp-flamingo: #eebebe;
+  --ctp-rosewater: #f2d5cf;
+  
+  /* Accent color */
+  --accent: var(--ctp-teal);
+}
+
+body {
+  background-color: var(--ctp-base);
+  color: var(--ctp-text);
+}
+
+.navbar {
+  background-color: var(--ctp-mantle);
+}
+
+.card {
+  background-color: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+
+.btn-primary {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.alert {
+  background-color: var(--ctp-surface1);
+}
+
+.form-control, .form-select {
+  background-color: var(--ctp-surface1);
+  color: var(--ctp-text);
+  border: 1px solid var(--ctp-surface2);
+}
+
+.badge.bg-success {
+  background-color: var(--ctp-green) !important;
+}

@@ -1,6 +1,5 @@
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f8f9fa;
   padding: 20px;
 }
 
@@ -15,21 +14,8 @@ body {
   border-radius: 8px;
 }
 
-.form-container {
-  max-width: 500px;
-  margin: 40px auto;
-  padding: 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.btn-primary {
-  background-color: #4361ee;
-  border-color: #4361ee;
-}
-
 .navbar {
   margin-bottom: 30px;
   border-radius: 8px;
 }
+

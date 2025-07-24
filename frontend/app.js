@@ -1,3 +1,50 @@
+// Generate RSA key pair
+async function generateKeyPair() {
+    return await window.crypto.subtle.generateKey(
+        {
+            name: "RSASSA-PKCS1-v1_5",
+            modulusLength: 2048,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: "SHA-256"
+        },
+        true,
+        ["sign", "verify"]
+    );
+}
+
+// Export public key in SPKI format
+async function exportPublicKey(key) {
+    const exported = await window.crypto.subtle.exportKey("spki", key);
+    return arrayBufferToBase64(exported);
+}
+
+// Sign data with private key
+async function signData(privateKey, data) {
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(data);
+    const signature = await window.crypto.subtle.sign(
+        "RSASSA-PKCS1-v1_5",
+        privateKey,
+        encoded
+    );
+    return arrayBufferToBase64(signature);
+}
+
+// Helper: ArrayBuffer to base64
+function arrayBufferToBase64(buffer) {
+    return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+// Helper: base64 to ArrayBuffer
+function base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+
 // Main App Component
 function App() {
   const [currentPage, setCurrentPage] = React.useState('login');
@@ -30,35 +77,83 @@ function App() {
     }
   };
   
-  // Handle login
-  const handleLogin = async (email, password) => {
-    try {
-      const response = await axios.post('/login', { email, password });
-      
-      // Save token and user data
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${response.data.token}`;
-      
-      setUser(response.data.user);
-      setCurrentPage('dashboard');
-      fetchJobs();
-      return true;
-    } catch (error) {
-      alert('Login failed. Please check your credentials.');
-      return false;
-    }
-  };
-  
   // Handle registration
-  const handleRegister = async (name, email, password, role) => {
+  const handleRegister = async (name, email, role) => {
     try {
-      await axios.post('/register', { name, email, password, role });
+      // Generate key pair
+      const keyPair = await generateKeyPair();
+      const publicKey = await exportPublicKey(keyPair.publicKey);
+      
+      // Store private key (insecure! for demo only)
+      const exportedPrivate = await window.crypto.subtle.exportKey(
+          "pkcs8",
+          keyPair.privateKey
+      );
+      localStorage.setItem('privateKey', arrayBufferToBase64(exportedPrivate));
+      
+      // Send registration
+      const response = await axios.post('/register', { 
+          name, 
+          email, 
+          role,
+          publicKey
+      });
+      
+      // Store certificate
+      localStorage.setItem('certificate', response.data.certificate);
+      
       alert('Registration successful! Please login.');
       setCurrentPage('login');
       return true;
     } catch (error) {
       alert('Registration failed. Please try again.');
+      return false;
+    }
+  };
+  
+  // Handle login
+  const handleLogin = async (email) => {
+    try {
+      // Step 1: Get nonce
+      const initResponse = await axios.post('/login-init', { email });
+      const nonce = initResponse.data.nonce;
+      
+      // Step 2: Sign nonce
+      const privateKeyBase64 = localStorage.getItem('privateKey');
+      const privateKeyBuffer = base64ToArrayBuffer(privateKeyBase64);
+      
+      const privateKey = await window.crypto.subtle.importKey(
+          "pkcs8",
+          privateKeyBuffer,
+          {
+              name: "RSASSA-PKCS1-v1_5",
+              hash: "SHA-256"
+          },
+          true,
+          ["sign"]
+      );
+      
+      const signature = await signData(privateKey, nonce);
+      const certificate = localStorage.getItem('certificate');
+      
+      // Step 3: Complete login
+      const loginResponse = await axios.post('/login', {
+          email,
+          signature,
+          certificate
+      });
+      
+      // Save token and user data
+      localStorage.setItem('token', loginResponse.data.token);
+      localStorage.setItem('user', JSON.stringify(loginResponse.data.user));
+      axios.defaults.headers.common['Authorization'] = `Bearer ${loginResponse.data.token}`;
+      
+      setUser(loginResponse.data.user);
+      setCurrentPage('dashboard');
+      fetchJobs();
+      return true;
+    } catch (error) {
+      alert('Login failed. Please check your credentials.');
       return false;
     }
   };
@@ -75,12 +170,39 @@ function App() {
   // Handle job creation
   const handleCreateJob = async (jobData) => {
     try {
-      await axios.post('/jobs', jobData);
+      // Prepare data for signing - FIXED: consistent budget formatting
+      const dataToSign = `${jobData.title}|${jobData.description}|${jobData.budget.toFixed(2)}|${jobData.deadline}`;
+      
+      console.log("Signing data:", dataToSign); // Important debug log
+      
+      // Sign job data
+      const privateKeyBase64 = localStorage.getItem('privateKey');
+      const privateKeyBuffer = base64ToArrayBuffer(privateKeyBase64);
+      
+      const privateKey = await window.crypto.subtle.importKey(
+          "pkcs8",
+          privateKeyBuffer,
+          {
+              name: "RSASSA-PKCS1-v1_5",
+              hash: "SHA-256"
+          },
+          true,
+          ["sign"]
+      );
+      
+      const signature = await signData(privateKey, dataToSign);
+      
+      // Send job with signature
+      await axios.post('/jobs', {
+          ...jobData,
+          signature
+      });
+      
       fetchJobs();
       setCurrentPage('jobs');
       return true;
     } catch (error) {
-      alert('Job creation failed');
+      alert('Job creation failed: ' + (error.response?.data?.error || error.message));
       return false;
     }
   };
@@ -118,7 +240,7 @@ function App() {
 // Navbar Component
 function Navbar({ user, onLogout }) {
   return (
-    <nav className="navbar navbar-expand-lg navbar-light bg-light mb-4">
+    <nav className="navbar navbar-expand-lg navbar-light mb-4">
       <div className="container-fluid">
         <a className="navbar-brand" href="#" onClick={(e) => e.preventDefault()}>Eutelos</a>
         <div className="d-flex align-items-center">
@@ -139,13 +261,12 @@ function Navbar({ user, onLogout }) {
 // Login Page Component
 function LoginPage({ onLogin, onNavigate }) {
   const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    await onLogin(email, password);
+    await onLogin(email);
     setLoading(false);
   };
   
@@ -163,16 +284,6 @@ function LoginPage({ onLogin, onNavigate }) {
                   className="form-control"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="mb-3">
-                <label className="form-label">Password</label>
-                <input 
-                  type="password" 
-                  className="form-control"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
@@ -204,14 +315,13 @@ function LoginPage({ onLogin, onNavigate }) {
 function RegisterPage({ onRegister, onNavigate }) {
   const [name, setName] = React.useState('');
   const [email, setEmail] = React.useState('');
-  const [password, setPassword] = React.useState('');
   const [role, setRole] = React.useState('client');
   const [loading, setLoading] = React.useState(false);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    await onRegister(name, email, password, role);
+    await onRegister(name, email, role);
     setLoading(false);
   };
   
@@ -243,24 +353,14 @@ function RegisterPage({ onRegister, onNavigate }) {
                 />
               </div>
               <div className="mb-3">
-                <label className="form-label">Password</label>
-                <input 
-                  type="password" 
-                  className="form-control"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="mb-3">
                 <label className="form-label">Role</label>
                 <select 
                   className="form-select"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                 >
-                  <option value="client">Client (I want to post jobs)</option>
-                  <option value="freelancer">Freelancer (I want to find work)</option>
+                  <option value="client">Client</option>
+                  <option value="freelancer">Freelancer</option>
                 </select>
               </div>
               <button 
@@ -303,7 +403,6 @@ function DashboardPage({ user, onLogout, onViewJobs, onCreateJob }) {
           <div className="mt-4">
             {user.role === 'client' ? (
               <>
-                <p>As a client, you can post new jobs and manage existing ones</p>
                 <button 
                   className="btn btn-primary me-2" 
                   onClick={onCreateJob}
@@ -312,7 +411,7 @@ function DashboardPage({ user, onLogout, onViewJobs, onCreateJob }) {
                 </button>
               </>
             ) : (
-              <p>As a freelancer, you can browse available jobs and submit proposals</p>
+              <p>Browse available jobs below</p>
             )}
             <button 
               className="btn btn-secondary" 
@@ -349,7 +448,10 @@ function JobsPage({ jobs, onBack }) {
             <div key={job.id} className="col-md-6 mb-4">
               <div className="card h-100">
                 <div className="card-body">
-                  <h5 className="card-title">{job.title}</h5>
+                  <h5 className="card-title">
+                    {job.title}
+                    {job.verified && <span className="badge bg-success ms-2">Verified</span>}
+                  </h5>
                   <p className="card-text">{job.description}</p>
                   <ul className="list-group list-group-flush">
                     <li className="list-group-item">
@@ -444,6 +546,7 @@ function CreateJobPage({ onCreate, onCancel }) {
                   onChange={(e) => setBudget(e.target.value)}
                   required
                   min="1"
+                  step="0.01"
                 />
               </div>
               <div className="col-md-6">
@@ -474,3 +577,4 @@ function CreateJobPage({ onCreate, onCancel }) {
 // Render the app
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
+
